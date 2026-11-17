@@ -1,5 +1,9 @@
 /** Aquiles AI simulator: offline only. No mixer network client is loaded by this module. */
 export const INPUT_COUNT = 24;
+export const MODEL_REVISION = 3;
+export const EQ_BANDS = ['low', 'lowMid', 'highMid', 'high'];
+const EQ_FREQUENCIES = [125, 350, 3200, 9000];
+export const DEFAULT_EQ_PARAMS = () => Object.fromEntries(EQ_BANDS.map((b, i) => [b, {freqHz:EQ_FREQUENCIES[i], q:0.8}]));
 export const AUX_COUNT = 8;
 export const FADER_MIN = -60;
 export const FADER_MAX = 10;
@@ -14,13 +18,13 @@ export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isF
 export const createChannel = (id) => ({
   id, name: DEFAULT_NAMES[id - 1] || `Canal ${id}`, color: COLORS[(id - 1) % COLORS.length],
   faderDb: -12, muted: false, solo: false, pan: 0, hpf: 80,
-  eq: { low: 0, lowMid: 0, highMid: 0, high: 0 },
-  comp: { enabled: false, threshold: -18, ratio: 3 },
-  gate: { enabled: false, threshold: -45 },
+  eq: { low: 0, lowMid: 0, highMid: 0, high: 0 }, eqParams:DEFAULT_EQ_PARAMS(),
+  comp: { enabled: false, threshold: -18, ratio: 3, attackMs:10, releaseMs:150, makeupDb:0, softKnee:false },
+  gate: { enabled: false, threshold: -45, attackMs:5, holdMs:30, releaseMs:160 },
   aux: Array(AUX_COUNT).fill(-60), fx: Array(4).fill(-60)
 });
 export const createInitialState = () => ({
-  version: 1, mode: 'SIMULATOR', channels: Array.from({ length: INPUT_COUNT }, (_, i) => createChannel(i + 1)),
+  version: 1, modelRevision: MODEL_REVISION, mode: 'SIMULATOR', channels: Array.from({ length: INPUT_COUNT }, (_, i) => createChannel(i + 1)),
   master: { faderDb: -6, muted: false }, scenes: [], audit: [], updatedAt: new Date().toISOString()
 });
 export function isValidState(state) {
@@ -35,9 +39,16 @@ export function isValidState(state) {
     typeof c.muted === 'boolean' && typeof c.solo === 'boolean' &&
     Number.isFinite(c.pan) && c.pan >= -100 && c.pan <= 100 &&
     Number.isFinite(c.hpf) && c.hpf >= 20 && c.hpf <= 400 &&
-    c.eq && ['low','lowMid','highMid','high'].every(k => Number.isFinite(c.eq[k]) && c.eq[k] >= -15 && c.eq[k] <= 15) &&
+    c.eq && EQ_BANDS.every(k => Number.isFinite(c.eq[k]) && c.eq[k] >= -15 && c.eq[k] <= 15) &&
+    c.eqParams && EQ_BANDS.every(k => Number.isFinite(c.eqParams[k]?.freqHz) && c.eqParams[k].freqHz >= 20 && c.eqParams[k].freqHz <= 20000 && Number.isFinite(c.eqParams[k]?.q) && c.eqParams[k].q >= .3 && c.eqParams[k].q <= 12) &&
     c.comp && typeof c.comp.enabled === 'boolean' && Number.isFinite(c.comp.threshold) && Number.isFinite(c.comp.ratio) &&
+    Number.isFinite(c.comp.attackMs) && c.comp.attackMs>=0 && c.comp.attackMs<=200 &&
+    Number.isFinite(c.comp.releaseMs) && c.comp.releaseMs>=10 && c.comp.releaseMs<=3000 &&
+    Number.isFinite(c.comp.makeupDb) && c.comp.makeupDb>=-24 && c.comp.makeupDb<=24 && typeof c.comp.softKnee==='boolean' &&
     c.gate && typeof c.gate.enabled === 'boolean' && Number.isFinite(c.gate.threshold) &&
+    Number.isFinite(c.gate.attackMs) && c.gate.attackMs>=0 && c.gate.attackMs<=200 &&
+    Number.isFinite(c.gate.holdMs) && c.gate.holdMs>=0 && c.gate.holdMs<=2000 &&
+    Number.isFinite(c.gate.releaseMs) && c.gate.releaseMs>=10 && c.gate.releaseMs<=3000 &&
     Array.isArray(c.aux) && c.aux.length === AUX_COUNT && c.aux.every(v=>Number.isFinite(v) && v >= FADER_MIN && v <= FADER_MAX) &&
     Array.isArray(c.fx) && c.fx.length === 4 && c.fx.every(v=>Number.isFinite(v) && v >= FADER_MIN && v <= FADER_MAX));
 }
@@ -60,9 +71,17 @@ export function updateChannel(state, id, patch, actor='Operador') {
     else if (key === 'eq' && value && typeof value === 'object') {
       next.eq = {...current.eq};
       for (const band of ['low','lowMid','highMid','high']) if (band in value) next.eq[band] = clamp(value[band], -15, 15);
+    } else if (key === 'eqParams' && value && typeof value === 'object' && !Array.isArray(value)) {
+      next.eqParams = structuredClone(current.eqParams);
+      for (const [band, patchBand] of Object.entries(value)) {
+        if (!EQ_BANDS.includes(band) || !patchBand || typeof patchBand !== 'object' || Array.isArray(patchBand) || Object.keys(patchBand).some(k=>!['freqHz','q'].includes(k))) throw new Error('Banda EQ inválida');
+        if ('freqHz' in patchBand) next.eqParams[band].freqHz = clamp(patchBand.freqHz,20,20000);
+        if ('q' in patchBand) next.eqParams[band].q = clamp(patchBand.q,.3,12);
+      }
     } else if (key === 'aux' && Array.isArray(value) && value.length === AUX_COUNT) next.aux = value.map(v=>clamp(v,FADER_MIN,FADER_MAX));
-    else if (key === 'comp' && value && typeof value === 'object') next.comp = { ...current.comp, enabled: Boolean(value.enabled ?? current.comp.enabled), threshold: clamp(value.threshold ?? current.comp.threshold, -60, 0), ratio: clamp(value.ratio ?? current.comp.ratio, 1, 20) };
-    else if (key === 'gate' && value && typeof value === 'object') next.gate = { ...current.gate, enabled: Boolean(value.enabled ?? current.gate.enabled), threshold: clamp(value.threshold ?? current.gate.threshold, -80, 0) };
+    else if (key === 'fx' && Array.isArray(value) && value.length === 4) next.fx=value.map(v=>clamp(v,FADER_MIN,FADER_MAX));
+    else if (key === 'comp' && value && typeof value === 'object') next.comp = { ...current.comp, enabled: Boolean(value.enabled ?? current.comp.enabled), threshold: clamp(value.threshold ?? current.comp.threshold, -60, 0), ratio: clamp(value.ratio ?? current.comp.ratio, 1, 20), attackMs:clamp(value.attackMs ?? current.comp.attackMs,0,200), releaseMs:clamp(value.releaseMs ?? current.comp.releaseMs,10,3000), makeupDb:clamp(value.makeupDb ?? current.comp.makeupDb,-24,24), softKnee:Boolean(value.softKnee ?? current.comp.softKnee) };
+    else if (key === 'gate' && value && typeof value === 'object') next.gate = { ...current.gate, enabled: Boolean(value.enabled ?? current.gate.enabled), threshold: clamp(value.threshold ?? current.gate.threshold, -80, 0), attackMs:clamp(value.attackMs ?? current.gate.attackMs,0,200), holdMs:clamp(value.holdMs ?? current.gate.holdMs,0,2000), releaseMs:clamp(value.releaseMs ?? current.gate.releaseMs,10,3000) };
     else throw new Error(`Parâmetro não permitido: ${key}`);
   }
   return changed({...state, channels: state.channels.map((c,i) => i === index ? next : c)}, actor, `CH ${id}: ${Object.keys(patch).join(', ')}`);
@@ -111,3 +130,22 @@ export function simulatedMeter(channel, timeMs=Date.now()) {
   return clamp(-19 + channel.faderDb * .45 + wave + (channel.id % 4) * 1.4, -60, 3);
 }
 export function dbToMeterPercent(db) { return clamp((db + 60) / 63 * 100, 0, 100); }
+
+/** Migration preserves v0.1/v0.2 saved data and every embedded scene without modifying input. */
+export function migrateState(oldState) {
+  if (!oldState || oldState.version !== 1 || !Array.isArray(oldState.channels) || oldState.channels.length !== INPUT_COUNT) return null;
+  const upgrade = (old, index) => {
+    const base=createChannel(index+1);
+    if (!old || old.id!==index+1) return null;
+    const fields={...base,...old};
+    fields.eq={...base.eq,...old.eq};
+    fields.eqParams=Object.fromEntries(EQ_BANDS.map(k=>[k,{...base.eqParams[k], ...(old.eqParams?.[k]||{})}]));
+    fields.comp={...base.comp,...old.comp};
+    fields.gate={...base.gate,...old.gate};
+    return fields;
+  };
+  const upgraded={...oldState,version:1,modelRevision:MODEL_REVISION,mode:'SIMULATOR',channels:oldState.channels.map(upgrade)};
+  if (!Array.isArray(oldState.scenes)) return null;
+  upgraded.scenes=oldState.scenes.map(scene=>({...scene,channels:Array.isArray(scene.channels)?scene.channels.map(upgrade):null}));
+  return isValidState(upgraded)?upgraded:null;
+}
