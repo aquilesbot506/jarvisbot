@@ -11,6 +11,7 @@ const storage = window.aquilesStorage || {
 };
 let state = createInitialState();
 let tab = 'mixer', bank = 0, selected = 15, chat = [], pending = null;
+let mixerView = 'selected';
 let undoStack = [], redoStack = [], saveQueue = Promise.resolve(), toastHandle;
 const h = x => String(x ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dt = iso => new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -25,7 +26,7 @@ const icon = (name) => {
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.mixer}</svg>`;
 };
-const navItems = [['mixer','Mixer'],['channel','Channel Edit'],['scenes','Scenes'],['ai','Aquiles IA'],['settings','Configurações']];
+const navItems = [['mixer','HOME'],['channel','SELECTED CH'],['scenes','SCENE'],['ai','AQUILES IA'],['settings','SETUP']];
 function pushHistory() { undoStack.push(structuredClone(state)); if (undoStack.length>40) undoStack.shift(); redoStack = []; }
 function persist() {
   const snapshot = structuredClone(state);
@@ -42,18 +43,19 @@ function notify(text,error=false) {
   document.body.appendChild(el); clearTimeout(toastHandle); toastHandle=setTimeout(()=>el.remove(),3500);
 }
 function header() {
-  const titles={mixer:'Mixer de 24 canais',channel:'Processamento de canal',scenes:'Cenas e presets',ai:'Assistente Aquiles',settings:'Configurações'};
-  return `<header class="topbar"><div><div class="head-kicker">CENA PRODUÇÕES · DIGITAL AUDIO</div><h1>${titles[tab]}</h1></div>
-    <div class="top-actions"><span class="pill sim"><span class="led"></span> SIMULADOR OFFLINE</span><span class="pill warn">MESA REAL DESCONECTADA</span></div></header>`;
+  const tabs = [["mixer","HOME"],["channel","SELECTED CHANNEL"],["scenes","SCENE"],["ai","AQUILES AI"],["settings","UTILITY"]];
+  const bridge = state.channels.slice(bank*12,bank*12+12).map(c => `<div class="bridge-ch ${selected===c.id?'is-active':''}" title="CH ${c.id}: ${h(c.name)}"><span class="bridge-meter"><span class="vu-fill" data-meter-id="${c.id}"></span></span><small>${String(c.id).padStart(2,'0')}</small></div>`).join('');
+  return `<header class="topbar dm7-topbar">
+    <div class="dm7-top-left"><div class="dm-logo-mark">A<span>Q</span></div><div><strong>AQUILES <em>AI</em></strong><small>CENA PRODUÇÕES · DIGITAL MIXING</small></div></div>
+    <div class="top-meter-group"><div class="bridge-label">METER BRIDGE <span>SYNTHETIC</span></div><div class="meter-bridge">${bridge}</div></div>
+    <div class="dm7-top-status"><div class="dm7-scene"><span>SCENE MEMORY</span><strong>${state.scenes[0]?h(state.scenes[0].name):'001 · INITIAL DATA'}</strong></div><span class="dm7-connected">● SIMULATOR</span><span class="dm7-clock" id="dm7-clock">--:--</span></div>
+  </header><div class="dm7-tabs">${tabs.map(([key,label])=>`<button class="dm7-tab ${tab===key?'current':''}" data-action="tab" data-tab="${key}" aria-current="${tab===key?'page':'false'}">${label}</button>`).join('')}<div class="dm7-tabs-status">● HARDWARE DISCONNECTED · OFFLINE</div></div>`;
 }
 function sidebar() {
-  return `<aside class="sidebar"><div class="brand"><div class="brandmark">A<span>Q</span></div><div><div class="brandtitle">AQUILES</div><div class="brandsub">INTELLIGENT MIX</div></div></div>
-  <div class="sidecaption">CONSOLE</div>${navItems.map(([key,label])=>`<button class="nav ${key===tab?'active':''}" data-action="tab" data-tab="${key}" title="${label}" aria-current="${key===tab?'page':'false'}">${icon(key)}<span>${label}</span></button>`).join('')}
-  <div class="side-spacer"></div><div class="side-card"><b><span class="led"></span> Ambiente seguro</b><small>Modo de simulação. Nenhum comando é enviado à Soundcraft física.</small></div>
-  <div class="sidebar-footer">AQUILES AI v0.1.0<br/>© CENA PRODUÇÕES</div></aside>`;
+  return `<aside class="sidebar dm7-rail"><div class="rail-brand"><div class="brandmark">A<span>Q</span></div><span>CENA</span></div>${navItems.map(([key,label])=>`<button class="nav ${key===tab?'active':''}" data-action="tab" data-tab="${key}" title="${label}" aria-label="${label}" aria-current="${key===tab?'page':'false'}">${icon(key)}<span>${label}</span></button>`).join('')}<div class="side-spacer"></div><div class="rail-mode"><span class="led"></span>SIM</div></aside>`;
 }
 function shell(body) {
-  root.innerHTML = `<div class="shell">${sidebar()}<div class="workspace">${header()}<main class="content">${body}<div class="footer-note">AQUILES AI v0.1.0 · SIMULAÇÃO · Software independente, não afiliado à Soundcraft. Dados VU sintéticos.</div></main></div></div>`;
+  root.innerHTML = `<div class="shell dm7-shell">${sidebar()}<div class="workspace">${header()}<main class="content">${body}<div class="footer-note">AQUILES AI v0.2.0 · CONTROLES SIMULADOS · Medidores sintéticos · Interface inspirada no fluxo de trabalho da DM7; software independente da Yamaha e Soundcraft.</div></main></div></div>`;
 }
 function stats() {
   const muted=state.channels.filter(c=>c.muted).length;
@@ -66,26 +68,55 @@ function stats() {
 }
 function strip(c,master=false) {
   const value = c.faderDb;
-  return `<div class="strip ${master?'master':''} ${selected===c.id && !master?'selected':''}" data-ch="${c.id}">
-    <div class="ch-number">${master?'STEREO MASTER':`INPUT ${String(c.id).padStart(2,'0')}`}</div>
-    ${master?`<div class="strip-name" style="padding:12px 0 4px">${h(c.name)}</div>`:`<button class="strip-name btn ghost small" style="background:transparent;border:none;max-width:100%;padding:12px 0 4px" data-action="select" data-id="${c.id}" title="Editar ${h(c.name)}">${h(c.name)}</button>`}
-    <div class="strip-color" style="background:${master?'#fa6371':h(c.color)}"></div>
-    <div class="db-val" data-db-for="${c.id}">${db(value)}</div>
-    <div class="fader-area"><div class="vu-track"><div class="vu-fill" data-meter-id="${c.id}"></div></div>
-    <input class="fader" type="range" min="-60" max="10" step="0.5" value="${value}" data-slider="fader" data-id="${c.id}" aria-label="Fader ${h(c.name)}"/></div>
-    <div class="strip-buttons"><button class="mini-btn ${c.muted?'muted':''}" data-action="mute" data-id="${c.id}" aria-pressed="${c.muted}">M</button>
-    ${master?'':`<button class="mini-btn ${c.solo?'solo':''}" data-action="solo" data-id="${c.id}" aria-pressed="${c.solo}">S</button>`}</div>
+  const id = master?'master':c.id;
+  return `<div class="strip dm7-strip ${master?'master':''} ${selected===c.id && !master?'selected':''}" data-ch="${id}">
+    <div class="strip-top-id">${master?'ST A':`CH ${String(c.id).padStart(2,'0')}`}</div>
+    <div class="strip-mini-graph"><div class="strip-mini-meter vu-track"><div class="vu-fill" data-meter-id="${id}"></div></div><span>${master?'STEREO':'INPUT'}</span></div>
+    <div class="strip-color" style="background:${master?'#e7d68a':h(c.color)}"></div>
+    <div class="ch-number">${master?'MASTER':'CHANNEL'}</div>
+    ${master?`<div class="strip-name">STEREO L/R</div>`:`<button class="strip-name" data-action="select-inline" data-id="${c.id}" title="Selecionar canal ${h(c.name)}">${h(c.name)}</button>`}
+    <div class="dm7-strip-sel">${master?'<span>ST</span>':`<button class="sel-btn ${selected===c.id?'sel-on':''}" data-action="select-inline" data-id="${c.id}">SEL</button>`}<span class="cue-label">CUE</span></div>
+    <div class="db-val" data-db-for="${id}">${db(value)}</div>
+    <div class="fader-area"><div class="dm7-scale"><span>+10</span><span>0</span><span>-10</span><span>-20</span><span>-40</span><span>-∞</span></div><input class="fader" type="range" min="-60" max="10" step="0.5" value="${value}" data-slider="fader" data-id="${id}" aria-label="Fader ${h(c.name||'Master')}"/></div>
+    <div class="strip-buttons"><button class="mini-btn on-btn ${!c.muted?'is-on':'muted'}" data-action="mute" data-id="${id}" aria-pressed="${!c.muted}">${c.muted?'OFF':'ON'}</button>
+    ${master?'':`<button class="mini-btn ${c.solo?'solo':''}" data-action="solo" data-id="${id}" aria-pressed="${c.solo}">SOLO</button>`}</div>
   </div>`;
+}
+function dynamicsChart(type, c) {
+  const compressor=type==='comp';
+  const point=compressor?80 + c.comp.threshold*.48 : 105 + c.gate.threshold*.5;
+  const coords=compressor?`0,126 ${point},${126-point*.55} 165,${75-(165-point)/Math.max(1,c.comp.ratio)}`:`0,126 ${Math.max(20,point-18)},115 ${point},${126-point*.55} 165,28`;
+  return `<svg class="dm7-dynamics-graph" viewBox="0 0 168 132" preserveAspectRatio="none" role="img" aria-label="Gráfico de dinâmica simulado"><g stroke="#34404a" stroke-width="1">${[20,48,76,104].map(n=>`<path d="M0 ${n}H168"/>`).join('')}${[28,56,84,112,140].map(n=>`<path d="M${n} 0V132"/>`).join('')}</g><polyline fill="none" stroke="${compressor?'#479ffb':'#f7a94b'}" stroke-width="2.4" points="${coords}"/><circle cx="${point}" cy="${126-point*.55}" r="4" fill="${compressor?'#479ffb':'#f7a94b'}"/></svg>`;
+}
+function selectedOverview(c) {
+  return `<section class="dm7-selected-overview" aria-label="Visão do canal selecionado">
+    <div class="dm7-processor-top">
+      <div class="dm7-selected-id"><span class="overline">SELECTED CHANNEL</span><div class="selected-id-main"><b>${String(c.id).padStart(2,'0')}</b><div><strong>${h(c.name)}</strong><small>INPUT ${String(c.id).padStart(2,'0')} · SIMULATED</small></div></div><button class="dm7-edit-channel" data-action="select" data-id="${c.id}">EDIT CHANNEL ↗</button></div>
+      <div class="dm7-mini-param"><span>INPUT</span><strong>LOCAL</strong><small>SIMULATED</small></div>
+      <div class="dm7-mini-param"><span>HPF</span><strong>${c.hpf} <small>Hz</small></strong><small>ACTIVE</small></div>
+      <div class="dm7-mini-param"><span>PAN</span><strong>${c.pan===0?'C':c.pan<0?'L '+Math.abs(c.pan):'R '+c.pan}</strong><small>BALANCE</small></div>
+      <div class="dm7-mini-param"><span>FADER</span><strong>${db(c.faderDb)}</strong><small>LEVEL</small></div>
+      <div class="dm7-mini-param"><span>ON</span><strong class="${c.muted?'muted-text':'active-text'}">${c.muted?'OFF':'ON'}</strong><small>${c.muted?'MUTED':'ACTIVE'}</small></div>
+    </div>
+    <div class="dm7-processing-row">
+      <div class="dm7-eq-unit"><div class="dm7-unit-title"><span>EQ</span><strong>4 BAND PARAMETRIC</strong><em>SIM</em></div>${eqSVG(c)}<div class="dm7-eq-numbers">${[['LOW',c.eq.low],['LOW MID',c.eq.lowMid],['HIGH MID',c.eq.highMid],['HIGH',c.eq.high]].map(([label,v],i)=>`<div><span class="eq-band-num">${i+1}</span><small>${label}</small><strong>${v>=0?'+':''}${v.toFixed(1)} <i>dB</i></strong></div>`).join('')}</div></div>
+      <div class="dm7-dyn-unit"><div class="dm7-unit-title orange"><span>DYN 1</span><strong>GATE</strong><em>${c.gate.enabled?'ON':'OFF'}</em></div>${dynamicsChart('gate',c)}<div class="dm7-dyn-values"><span>THRESHOLD <strong>${c.gate.threshold} dB</strong></span><span>GATE <strong>${c.gate.enabled?'ENABLED':'BYPASS'}</strong></span></div></div>
+      <div class="dm7-dyn-unit"><div class="dm7-unit-title blue"><span>DYN 2</span><strong>COMPRESSOR</strong><em>${c.comp.enabled?'ON':'OFF'}</em></div>${dynamicsChart('comp',c)}<div class="dm7-dyn-values"><span>THRESHOLD <strong>${c.comp.threshold} dB</strong></span><span>RATIO <strong>${c.comp.ratio}:1</strong></span></div></div>
+      <div class="dm7-utility-unit"><div class="dm7-unit-title"><span>UTILITY</span><strong>QUICK ACTIONS</strong></div><button class="dm7-util-button" data-action="tab" data-tab="channel">PARAMETERS</button><button class="dm7-util-button" data-action="quick-scene">SCENE STORE</button><button class="dm7-util-button" data-action="tab" data-tab="ai">AQUILES AI ✦</button><div class="dm7-real-warning">● SIM MODE ONLY</div></div>
+    </div>
+  </section>`;
 }
 function renderMixer() {
   const list = state.channels.slice(bank*12,bank*12+12);
-  return `<div class="hero-line"><div><h2 class="section-title">CONSOLE VIRTUAL</h2><div class="section-sub">Simulador Ui24R · 24 entradas · 8 AUX · 4 FX modelados</div></div>
-  <div class="row-actions"><button class="btn ghost" data-action="undo" ${!undoStack.length?'disabled':''}>↶ Desfazer</button><button class="btn ghost" data-action="redo" ${!redoStack.length?'disabled':''}>↷ Refazer</button>
-  <button class="btn primary" data-action="quick-scene">+ Salvar cena</button></div></div>
-  ${stats()}<section class="mix-panel"><div class="panel-heading"><b>CHANNEL STRIPS <span style="color:#758190;font-weight:500">/ BANCO ${bank+1}</span></b><div class="bank-tabs"><button class="bank-tab ${bank===0?'active':''}" data-action="bank" data-bank="0">CH 01–12</button><button class="bank-tab ${bank===1?'active':''}" data-action="bank" data-bank="1">CH 13–24</button></div></div>
-  <div class="mixer-scroll"><div class="mixer-bay">${list.map(c=>strip(c)).join('')}${strip({id:'master',name:'MASTER L/R',color:'#f35d65',...state.master},true)}</div></div></section>
-  <div class="channel-bottom"><span>● Controles virtuais · Clique no nome de um canal para editar</span><span>MASTER ${db(state.master.faderDb)}</span></div>
-  <div class="warning-card" style="margin-top:18px"><strong>SIMULAÇÃO ATIVA</strong> — Os medidores VU são sintéticos. Este aplicativo ainda não se conecta à mesa, não captura áudio e não altera o som real.</div>`;
+  const current=state.channels[selected-1];
+  const cells=state.channels.slice(bank*12,bank*12+12).map(c=>`<div class="dm7-overview-cell ${selected===c.id?'current':''}"><button data-action="select-inline" data-id="${c.id}" class="overview-name">CH ${String(c.id).padStart(2,'0')} <strong>${h(c.name)}</strong></button><div class="overview-chip-row"><span>HPF ${c.hpf}</span><span>EQ ${Math.round(Object.values(c.eq).reduce((a,b)=>a+b,0))}dB</span></div><div class="overview-chip-row"><span>DYN ${c.comp.enabled?'ON':'OFF'}</span><span>${db(c.faderDb)}</span></div><div class="overview-meter"><span class="vu-fill" data-meter-id="${c.id}"></span></div><button class="overview-on ${c.muted?'off':''}" data-action="mute" data-id="${c.id}">${c.muted?'OFF':'ON'}</button></div>`).join('');
+  return `<div class="dm7-mixer-ui">
+    <div class="dm7-workbar"><div class="dm7-sect-name">${mixerView==='selected'?'SELECTED CHANNEL VIEW':'OVERVIEW'} <span>· 24 INPUTS / 8 AUX</span></div><div class="dm7-view-buttons"><button class="${mixerView==='selected'?'current':''}" data-action="mixer-view" data-view="selected">SELECTED CH</button><button class="${mixerView==='overview'?'current':''}" data-action="mixer-view" data-view="overview">OVERVIEW</button></div><div class="dm7-workbar-actions"><button data-action="undo" ${!undoStack.length?'disabled':''}>↶ UNDO</button><button data-action="redo" ${!redoStack.length?'disabled':''}>↷ REDO</button><button data-action="quick-scene">STORE SCENE</button></div></div>
+    ${mixerView==='selected'?selectedOverview(current):`<div class="dm7-overview-grid">${cells}</div>`}
+    <section class="dm7-fader-desk"><div class="dm7-desk-head"><span>FADER BANK</span><div class="bank-tabs"><button class="bank-tab ${bank===0?'active':''}" data-action="bank" data-bank="0">CH 01–12</button><button class="bank-tab ${bank===1?'active':''}" data-action="bank" data-bank="1">CH 13–24</button></div><span class="dm7-desk-sub">LAYER: INPUT · ALL SIGNALS SYNTHETIC</span></div>
+    <div class="mixer-scroll"><div class="mixer-bay">${list.map(c=>strip(c)).join('')}${strip({id:'master',name:'MASTER L/R',color:'#f35d65',...state.master},true)}</div></div></section>
+    <div class="dm7-bottom-note"><span>● SIMULATOR — NO HARDWARE CONNECTION · NO AUDIO PROCESSING</span><span>STEREO MASTER: ${db(state.master.faderDb)}</span></div>
+  </div>`;
 }
 function eqSVG(c) {
   const bands=[c.eq.low,c.eq.lowMid,c.eq.highMid,c.eq.high];
@@ -148,11 +179,12 @@ function render() {
   animateMeters();
 }
 function animateMeters() {
+  const clock=document.getElementById('dm7-clock');if(clock)clock.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const now=Date.now();
   document.querySelectorAll('[data-meter-id]').forEach(el=>{
     const id=el.dataset.meterId;
     const c=id==='master'?{id:99,...state.master}:state.channels[Number(id)-1];
-    if (c) el.style.height=`${dbToMeterPercent(simulatedMeter(c,now))}%`;
+    if (c) { const percent=dbToMeterPercent(simulatedMeter(c,now)); if(el.closest('.overview-meter')) el.style.width=`${percent}%`; else el.style.height=`${percent}%`; }
   });
 }
 function doUndo() { if (!undoStack.length) return; redoStack.push(structuredClone(state));state=undoStack.pop();persist();render(); }
@@ -193,6 +225,8 @@ function runAction(action,btn) {
       case 'tab': tab=btn.dataset.tab;render();break;
       case 'bank': bank=Number(btn.dataset.bank);render();break;
       case 'select': selected=id;tab='channel';render();break;
+      case 'select-inline':selected=id;render();break;
+      case 'mixer-view':mixerView=btn.dataset.view==='overview'?'overview':'selected';render();break;
       case 'mute':
         if (btn.dataset.id==='master') commit(setMaster(state,{muted:!state.master.muted}));
         else commit(updateChannel(state,id,{muted:!state.channels[id-1].muted})); break;

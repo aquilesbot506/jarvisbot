@@ -1,6 +1,6 @@
 # AQUILES AI — CENA Produções
 
-**Versão 0.1.0: simulador offline para macOS.** Aplicativo Electron com 24 canais, faders, medidores sintéticos, controles de EQ/dinâmica/AUX (modelo de parâmetros), master, cenas locais e assistente de comandos em português com aprovação antes de executar.
+**Versão 0.2.0: simulador offline para macOS com interface inspirada no fluxo operacional Yamaha DM7.** Aplicativo Electron com 24 canais, faders, medidores sintéticos, controles de EQ/dinâmica/AUX (modelo de parâmetros), master, cenas locais e assistente de comandos em português com aprovação antes de executar.
 
 > ⚠️ **Nenhuma conexão real.** Esta versão não descobre, conecta ou envia comandos à Soundcraft Ui24R. Não há captura nem processamento de áudio. Os medidores são gerados matematicamente e não têm relação com o sinal real. O assistente offline é um interpretador de regras, não um LLM. Recursos de áudio real, OmniRouter e conexão física ainda não foram implementados.
 
@@ -65,3 +65,19 @@ Os testes usam o `node:test` nativo e não requerem dependências instaladas. O 
 6. Opcional: integrar um LLM local ou OmniRouter quando houver conectividade; o mixer continuará independente da IA.
 
 Projeto não afiliado à Soundcraft. Soundcraft e Ui24R são marcas de seus titulares.
+
+
+## Interface 0.2 — Selected Channel e Overview
+
+O console foi redesenhado com fluxo inspirado na organização do Yamaha DM7 Editor (referência estrutural, sem redistribuir ativos ou código Yamaha). Inclui:
+
+- Meter bridge sintética dos 12 canais visíveis no topo.
+- Navegação por bancos 01–12 e 13–24, barra compacta e faders verticais.
+- Visualização **Selected Channel** com EQ paramétrico, DYN 1 Gate, DYN 2 Compressor, HPF, pan e fader.
+- Tela **Overview** com 12 cards de processamento e estado de mute.
+- Controles ON, SOLO e SEL, com indicação visual de seleção.
+- Todos os parâmetros permanecem em **simulação**, sem conexão à mesa real e sem processamento de áudio.
+
+Referência de layout: https://br.yamaha.com/pt/business/audio/products/software-apps/dm7-editor/
+
+O software Aquiles é independente e não é afiliado à Yamaha ou à Soundcraft.
