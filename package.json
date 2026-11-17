@@ -1,0 +1,33 @@
+{
+  "name": "aquiles-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aquiles AI - simulador desktop para Soundcraft Ui24R da CENA Produções",
+  "author": "CENA Produções",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/core/mixer.js && node --check src/core/commands.js && node --check src/ui/app.js && node --check electron/main.cjs && node --check electron/preload.cjs",
+    "dist:mac": "electron-builder --mac dmg zip --publish never"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "br.com.cenaproducoes.aquiles-ai",
+    "productName": "Aquiles AI",
+    "directories": {"output": "release"},
+    "files": ["src/**/*", "electron/**/*", "assets/**/*", "package.json"],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [{"target": "dmg", "arch": ["arm64", "x64"]}, {"target": "zip", "arch": ["arm64", "x64"]}],
+      "identity": null
+    },
+    "dmg": {"title": "Aquiles AI"}
+  }
+}
