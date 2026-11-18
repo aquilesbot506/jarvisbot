@@ -1,83 +1,39 @@
-# AQUILES AI — CENA Produções
+# CENA Render AI — pacote de instalação v0.1
 
-**Versão 0.2.0: simulador offline para macOS com interface inspirada no fluxo operacional Yamaha DM7.** Aplicativo Electron com 24 canais, faders, medidores sintéticos, controles de EQ/dinâmica/AUX (modelo de parâmetros), master, cenas locais e assistente de comandos em português com aprovação antes de executar.
+Este é o **CENA Render AI**, publicado em uma branch isolada do repositório `jarvisbot`, sem alterar o código da branch `main`.
 
-> ⚠️ **Nenhuma conexão real.** Esta versão não descobre, conecta ou envia comandos à Soundcraft Ui24R. Não há captura nem processamento de áudio. Os medidores são gerados matematicamente e não têm relação com o sinal real. O assistente offline é um interpretador de regras, não um LLM. Recursos de áudio real, OmniRouter e conexão física ainda não foram implementados.
+A conexão do GitHub usada para publicar não permite criar repositórios novos. Por isso, nesta publicação o código completo está distribuído nos 8 arquivos `archive/part-*.b64`, que formam um pacote TAR.XZ comprimido. O instalador reconstrói os 19 arquivos originais na pasta `cena-render-ai/`, valida o SHA-256 e preserva os serviços existentes.
 
-## Rodar no Mac
+## Instalação no Ubuntu
 
-Requisitos: macOS suportado pelo Electron, Node.js 22+, npm, conectividade à internet **apenas na instalação inicial**.
-
-```sh
-npm install
-npm test
-npm start
+```bash
+git clone --branch cena-render-ai --single-branch https://github.com/aquilesbot506/jarvisbot.git cena-render-ai-github
+cd cena-render-ai-github
+bash setup.sh --install
 ```
 
-A partir daí, o simulador funciona sem internet, inclusive com o MacBook conectado exclusivamente ao hotspot da mesa. O app não tenta se comunicar com a mesa.
+O instalador gera uma senha em `cena-render-ai/.env` e inicia o Docker Compose. **Guarde a senha**, não publique o arquivo `.env`. A interface será publicada somente em `127.0.0.1:13860` por padrão, sem exposição pública.
 
-## Criar o aplicativo
+Para apenas extrair o projeto, rode `bash setup.sh`, sem `--install`. Após a extração você terá acesso a todo o código-fonte em `cena-render-ai/` e poderá executar `bash cena-render-ai/install.sh` quando desejar.
 
-No macOS:
+## Acesso pelo Mac com Tailscale
 
-```sh
-npm run dist:mac
+```bash
+ssh -L 13860:127.0.0.1:13860 cena@IP_TAILSCALE_DO_SERVIDOR
 ```
 
-O build produz `.app` dentro do pacote e instaladores `.dmg` em `release/`. Os builds do GitHub Actions são **não assinados e não notarizados**, portanto o Gatekeeper pode alertar. Para distribuir amplamente, configurar assinatura e notarização Apple; não desativar mecanismos de segurança do macOS para instalar aplicativos desconhecidos.
+Abra `http://127.0.0.1:13860` no Mac. Troque `IP_TAILSCALE_DO_SERVIDOR` pelo IP ou hostname real.
 
-## Desenvolvimento e testes
+## Recursos da versão atual
 
-```sh
-npm run check
-npm test
-```
+Upload de arquivos GLB/FBX/OBJ, visualizador 3D em GLB, API com autenticação, histórico de trabalhos, renderização PNG e vídeo MP4 via Blender em CPU. **Não há geração com IA generativa nem importação SKP nativa nesta versão.** No SketchUp exporte GLB, FBX ou OBJ conforme as opções disponíveis.
 
-Os testes usam o `node:test` nativo e não requerem dependências instaladas. O workflow `.github/workflows/mac-build.yml` testa no Linux e compila no runner macOS (Apple Silicon e Intel); os instaladores ficam disponíveis nos artefatos da execução após sucesso. Para GitHub Releases, é necessário configurar posteriormente um fluxo separado de publicação e assinatura.
+## Integridade
 
-## Segurança
+SHA-256 do arquivo TAR.XZ antes da extração:
 
-- `contextIsolation`, `sandbox`, sem `nodeIntegration` no renderer; CSP bloqueia conexões externas.
-- `preload` expõe apenas leitura/gravação de dados no diretório local Application Support do aplicativo.
-- No Electron, alterações são salvas em arquivo JSON com gravação atômica.
-- Cenas podem ser importadas/exportadas em JSON e devem passar por validação básica.
-- A IA **não** recebe permissão para alterar master, phantom ou ganho.
-- Toda proposta de automação exige aprovação explícita, e vale apenas para o simulador.
-- Nenhum token/API key deve ser salvo no projeto.
+`046b860e6edcc498e143308ba79b9c56e857c3e7771ba8621a96b8a4c5ffdb39`
 
-## Comandos locais suportados
+## Avisos
 
-- “Aquiles, aumenta o canal 15 em 2 dB.”
-- “Abaixa a guitarra L em 3 dB.”
-- “Muta o canal 10.”
-- “Desmuta o canal 10.”
-- “Muta todos menos o canal 15.”
-- “Salva cena Passagem de Som.”
-- “Analisa os níveis.” (somente dados simulados)
-
-## Próximas etapas
-
-1. Testar o .app no MacBook da CENA (Intel/Apple Silicon, versão macOS).
-2. Melhorar ergonomia (tela cheia e atalhos), completar modelos de cenas e testes.
-3. Adicionar driver isolado de leitura para `soundcraft-ui-connection` (https://github.com/fmalcher/soundcraft-ui), com consentimento explícito e testes em mesa fora de operação.
-4. Validar sincronização de estados em `REAL_READ_ONLY` com uma Ui24R física.
-5. Habilitar alterações reais **somente** após botão de autorização e testes seguros; nada de controle automático do master.
-6. Opcional: integrar um LLM local ou OmniRouter quando houver conectividade; o mixer continuará independente da IA.
-
-Projeto não afiliado à Soundcraft. Soundcraft e Ui24R são marcas de seus titulares.
-
-
-## Interface 0.2 — Selected Channel e Overview
-
-O console foi redesenhado com fluxo inspirado na organização do Yamaha DM7 Editor (referência estrutural, sem redistribuir ativos ou código Yamaha). Inclui:
-
-- Meter bridge sintética dos 12 canais visíveis no topo.
-- Navegação por bancos 01–12 e 13–24, barra compacta e faders verticais.
-- Visualização **Selected Channel** com EQ paramétrico, DYN 1 Gate, DYN 2 Compressor, HPF, pan e fader.
-- Tela **Overview** com 12 cards de processamento e estado de mute.
-- Controles ON, SOLO e SEL, com indicação visual de seleção.
-- Todos os parâmetros permanecem em **simulação**, sem conexão à mesa real e sem processamento de áudio.
-
-Referência de layout: https://br.yamaha.com/pt/business/audio/products/software-apps/dm7-editor/
-
-O software Aquiles é independente e não é afiliado à Yamaha ou à Soundcraft.
+O Mac Pro Ubuntu sem GPU terá renderização Cycles lenta. O app está preparado para instalação e testes, mas o funcionamento do Blender no hardware específico ainda não foi validado. Consulte `cena-render-ai/README.md` após a extração.
